@@ -1,0 +1,27 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/car.gd" id="1_50v30"]
+[ext_resource type="PackedScene" path="res://assets/kaykit/car_sedan.gltf" id="2_jtldb"]
+[ext_resource type="Script" path="res://scripts/car_ai_controller.gd" id="3_3mrxu"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_cp117"]
+size = Vector3(0.4, 0.25, 0.9)
+
+[node name="Car" type="CharacterBody3D" unique_id=2027586124]
+collision_layer = 2
+motion_mode = 1
+script = ExtResource("1_50v30")
+
+[node name="Model" type="Node3D" parent="." unique_id=1603951402 instance=ExtResource("2_jtldb")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=864433041]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.25, 0)
+shape = SubResource("BoxShape3D_cp117")
+
+[node name="AIController3D" type="Node3D" parent="." unique_id=2027872041]
+script = ExtResource("3_3mrxu")
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=241803461]
+transform = Transform3D(1, 0, 0, 0, 0.90630776, 0.42261827, 0, -0.42261827, 0.90630776, 0, 1.6, 2.2)
+fov = 70.0

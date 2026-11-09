@@ -1,0 +1,31 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/world.tscn" id="1_g4tn1"]
+[ext_resource type="PackedScene" path="res://scenes/car.tscn" id="2_788ra"]
+[ext_resource type="Script" path="res://scripts/car.gd" id="3_cbynj"]
+[ext_resource type="Script" path="res://addons/godot_rl_agents/sync.gd" id="4_24x3t"]
+
+[node name="Watch" type="Node3D" unique_id=310490192]
+
+[node name="World" type="Node3D" parent="." unique_id=1954219771 instance=ExtResource("1_g4tn1")]
+
+[node name="Car0" type="CharacterBody3D" parent="." unique_id=2027586124 instance=ExtResource("2_788ra")]
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, 15, 0.1, 9.5)
+collision_layer = 2
+motion_mode = 1
+script = ExtResource("3_cbynj")
+
+[node name="Car1" type="CharacterBody3D" parent="." unique_id=84144206 instance=ExtResource("2_788ra")]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, 7, 0.1, 8.5)
+collision_layer = 2
+motion_mode = 1
+script = ExtResource("3_cbynj")
+
+[node name="Car2" type="CharacterBody3D" parent="." unique_id=1489835628 instance=ExtResource("2_788ra")]
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, 11, 0.1, 17.5)
+collision_layer = 2
+motion_mode = 1
+script = ExtResource("3_cbynj")
+
+[node name="Sync" type="Node" parent="." unique_id=1132681729]
+script = ExtResource("4_24x3t")
