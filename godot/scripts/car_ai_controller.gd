@@ -47,7 +47,7 @@ func get_action_space() -> Dictionary:
 
 
 func get_info() -> Dictionary:
-	return {"goals_reached": finished_goals if done else car.goals_reached}
+	return {"goals_reached": finished_goals if done else car.goals_reached, "steer": car.steer_cmd}
 
 
 func set_action(action) -> void:

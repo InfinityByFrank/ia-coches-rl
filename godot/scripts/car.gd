@@ -1,13 +1,15 @@
 ## Coche cinematico (modelo de bicicleta), equivalente al car_env.py de la fase 1.
 ##
-## Observacion (13 valores):
+## Observacion (14 valores):
 ##   7 rayos (-90..+90 grados): distancia a la pared, 0..1
 ##   velocidad, 0..1
+##   posicion actual del volante, -1..1
 ##   direccion (seno, coseno) hacia las 2 proximas celdas de la ruta a la meta, -1..1
 ##   distancia que queda por la ruta / 30 m, 0..1
 ## Accion:      [direccion, aceleracion] en -1..1  (direccion +1 = derecha).
 ## Recompensa:  acercarse a la meta POR LA RUTA (x1.5 por metro) - 0.01 por paso,
-##              +10 al llegar a la meta (y sale otra), -10 si choca.
+##              +10 al llegar a la meta (y sale otra), -10 si choca,
+##              castigo por girar mucho y por cambiar el giro de golpe (evita el zigzag).
 ##
 ## Convencion de Godot: el coche mira hacia -Z local.
 class_name Car
@@ -27,13 +29,17 @@ const GOAL_MIN_CELLS := 4       # la meta esta entre 4 y 12 celdas de distancia 
 const GOAL_MAX_CELLS := 12
 const GOAL_BONUS := 10.0
 const PROGRESS_REWARD := 1.5    # recompensa por metro que se acerca a la meta
+const STEER_RATE := 4.0         # el volante tarda 0.5 s en ir de un tope al otro
+const STEER_PENALTY := 0.03     # castigo por fotograma = 0.03 * giro^2
+const STEER_CHANGE_PENALTY := 0.2   # castigo por fotograma = 0.2 * |cambio de giro|
 
 ## true = lo conduces tu con el teclado; false = lo controla la IA (set_action).
 @export var human_control := true
 @export var show_rays := true
 
 var speed := 0.0
-var steer_cmd := 0.0
+var steer_cmd := 0.0      # posicion REAL del volante (-1..1)
+var steer_target := 0.0   # lo que pide la IA / el teclado; el volante lo persigue con inercia
 var throttle_cmd := 0.0
 var is_crashed := false
 var steps := 0
@@ -86,6 +92,8 @@ func _physics_process(delta: float) -> void:
 		_read_keys(delta)
 	step_reward = 0.0
 	if not is_crashed:
+		var prev_steer := steer_cmd
+		steer_cmd = move_toward(steer_cmd, steer_target, STEER_RATE * delta)
 		speed = clampf(speed + throttle_cmd * ACCEL * delta, 0.0, MAX_SPEED)
 		rotation.y -= speed / WHEELBASE * tan(steer_cmd * MAX_STEER_ANGLE) * delta
 		var hit := move_and_collide(-global_transform.basis.z * speed * delta)
@@ -100,6 +108,7 @@ func _physics_process(delta: float) -> void:
 		else:
 			var cd := _cont_distance()
 			step_reward = (_prev_cd - cd) * PROGRESS_REWARD - 0.01
+			step_reward -= STEER_PENALTY * steer_cmd * steer_cmd + STEER_CHANGE_PENALTY * absf(steer_cmd - prev_steer)
 			_prev_cd = cd
 			if _graph and _cur_cell() == goal_cell:
 				step_reward += GOAL_BONUS
@@ -112,7 +121,7 @@ func _physics_process(delta: float) -> void:
 
 func _read_keys(delta: float) -> void:
 	var s := Input.get_axis(&"ui_left", &"ui_right")
-	steer_cmd = move_toward(steer_cmd, s, 4.0 * delta)
+	steer_target = s
 	var t := Input.get_axis(&"ui_down", &"ui_up")
 	throttle_cmd = t if t != 0.0 else -0.3     # sin pedal: frena suavemente
 	if Input.is_key_pressed(KEY_R):
@@ -121,7 +130,7 @@ func _read_keys(delta: float) -> void:
 
 ## La IA llama a esto cada paso con [direccion, aceleracion].
 func set_action(action: Array) -> void:
-	steer_cmd = clampf(action[0], -1.0, 1.0)
+	steer_target = clampf(action[0], -1.0, 1.0)
 	throttle_cmd = clampf(action[1], -1.0, 1.0)
 
 
@@ -134,6 +143,7 @@ func get_obs() -> Array:
 		else:
 			obs.append(1.0)
 	obs.append(speed / MAX_SPEED)
+	obs.append(steer_cmd)
 	if _graph:
 		for n in _next_cells():
 			var local := global_transform.basis.inverse() * (_graph.cell_center(n) - global_position)
@@ -158,6 +168,7 @@ func reset() -> void:
 		global_transform = s.global_transform
 	speed = 0.0
 	steer_cmd = 0.0
+	steer_target = 0.0
 	throttle_cmd = 0.0
 	is_crashed = false
 	steps = 0

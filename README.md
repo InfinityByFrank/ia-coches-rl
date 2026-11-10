@@ -69,17 +69,21 @@ El mapa se genera por código (`tools/build_city.gd`): retícula 13×13 de calle
 
 ### Observación, acción y recompensa en Godot
 
-- **Observación (13):** 7 rayos de distancia + velocidad + dirección (seno, coseno) hacia las 2 próximas celdas de la ruta a la meta + distancia que queda por la ruta.
+- **Observación (14):** 7 rayos de distancia + velocidad + posición del volante + dirección (seno, coseno) hacia las 2 próximas celdas de la ruta a la meta + distancia que queda por la ruta.
 - **Acción:** `[dirección, aceleración]` en -1..1 (dirección +1 = derecha).
-- **Recompensa:** ×1.5 por cada metro que se acerca a la meta *por la ruta*, +10 al llegar (aparece otra meta), −10 al chocar, −0.01 por paso.
+- **Recompensa:** ×1.5 por cada metro que se acerca a la meta *por la ruta*, +10 al llegar (aparece otra meta), −10 al chocar, −0.01 por paso, y un castigo por girar mucho (−0.03·giro²) y por cambiar el giro de golpe (−0.2·|Δgiro|).
+- El volante tiene inercia (tarda 0,5 s de tope a tope), también para la IA.
 - La meta se calcula con un BFS sobre las calles (no en línea recta, porque las manzanas están en medio).
 
 ### Resultados
 
 Con `python train_godot.py 800000` (~6 min), evaluado en 200 episodios de 250 pasos:
 
-- **6,9 metas por episodio** de media, y ningún episodio con 0 metas.
-- **74,5 %** de los episodios terminan sin chocar; el 25,5 % acaba en choque.
+- **5,9 metas por episodio** de media (3 % de episodios con 0 metas).
+- **77,5 %** de los episodios terminan sin chocar; el 22,5 % acaba en choque.
+- **Suavidad del volante:** cambio medio de 0,49 por paso y 0 % de inversiones de giro fuerte.
+
+La primera versión (sin castigo de volante) llegaba a 6,9 metas y 74,5 % sin choque, pero **zigzagueaba**: cambio medio de 1,67 por paso y 90 % de inversiones. Al suavizarlo se pierden algunas metas a cambio de una conducción mucho más natural.
 
 Para medirlo fiable hay que leer `info["goals_reached"]` (lo expone `car_ai_controller.gd`). Ojo: Godot lee la info al principio de cada paso de IA, después de que el coche se haya reseteado, por eso el controlador guarda el valor en `finished_goals` al terminar el episodio.
 
