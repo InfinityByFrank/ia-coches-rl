@@ -7,6 +7,8 @@ extends AIController3D
 
 @onready var car: Car = get_parent()
 
+var finished_goals := 0   # metas del ultimo episodio terminado (se lee tras el reset)
+
 
 func _ready() -> void:
 	super._ready()
@@ -24,6 +26,7 @@ func _physics_process(_delta: float) -> void:
 	n_steps += 1
 	if car.is_done():
 		done = true
+		finished_goals = car.goals_reached
 		needs_reset = true
 	if needs_reset:
 		car.reset()
@@ -41,6 +44,10 @@ func get_reward() -> float:
 
 func get_action_space() -> Dictionary:
 	return {"move": {"size": 2, "action_type": "continuous"}}  # [direccion, aceleracion]
+
+
+func get_info() -> Dictionary:
+	return {"goals_reached": finished_goals if done else car.goals_reached}
 
 
 func set_action(action) -> void:

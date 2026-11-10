@@ -1,9 +1,13 @@
 ## Coche cinematico (modelo de bicicleta), equivalente al car_env.py de la fase 1.
 ##
-## Observacion: 7 rayos (-90..+90 grados) con la distancia a la pared normalizada 0..1
-##              + velocidad normalizada 0..1  ->  8 valores.
+## Observacion (13 valores):
+##   7 rayos (-90..+90 grados): distancia a la pared, 0..1
+##   velocidad, 0..1
+##   direccion (seno, coseno) hacia las 2 proximas celdas de la ruta a la meta, -1..1
+##   distancia que queda por la ruta / 30 m, 0..1
 ## Accion:      [direccion, aceleracion] en -1..1  (direccion +1 = derecha).
-## Recompensa:  avance (velocidad) - 0.01 por paso, -10 si choca.
+## Recompensa:  acercarse a la meta POR LA RUTA (x1.5 por metro) - 0.01 por paso,
+##              +10 al llegar a la meta (y sale otra), -10 si choca.
 ##
 ## Convencion de Godot: el coche mira hacia -Z local.
 class_name Car
@@ -19,6 +23,10 @@ const RAY_COUNT := 7
 const RAY_MAX := 6.0            # m, alcance de los rayos
 const RAY_HEIGHT := 0.25        # m, altura de los rayos (por encima del asfalto)
 const MAX_EPISODE_STEPS := 2000
+const GOAL_MIN_CELLS := 4       # la meta esta entre 4 y 12 celdas de distancia (por la ruta)
+const GOAL_MAX_CELLS := 12
+const GOAL_BONUS := 10.0
+const PROGRESS_REWARD := 1.5    # recompensa por metro que se acerca a la meta
 
 ## true = lo conduces tu con el teclado; false = lo controla la IA (set_action).
 @export var human_control := true
@@ -30,6 +38,13 @@ var throttle_cmd := 0.0
 var is_crashed := false
 var steps := 0
 var step_reward := 0.0
+var goal_cell := Vector2i.ZERO
+var goals_reached := 0
+
+var _graph: RoadGraph
+var _dist_map: Dictionary = {}   # celda -> celdas hasta la meta
+var _prev_cd := 0.0
+var _beacon: MeshInstance3D
 
 var _rays: Array[RayCast3D] = []
 var _front_wheels: Array[Node3D] = []
@@ -60,6 +75,10 @@ func _ready() -> void:
 	add_child(mi)
 	if has_node("Camera3D"):
 		$Camera3D.make_current()
+	_graph = get_tree().get_first_node_in_group("roadgraph")
+	if _graph:
+		_make_beacon()
+		_new_goal()
 
 
 func _physics_process(delta: float) -> void:
@@ -79,7 +98,13 @@ func _physics_process(delta: float) -> void:
 			if human_control:
 				get_tree().create_timer(0.8).timeout.connect(reset)
 		else:
-			step_reward = speed / MAX_SPEED * 0.1 - 0.01
+			var cd := _cont_distance()
+			step_reward = (_prev_cd - cd) * PROGRESS_REWARD - 0.01
+			_prev_cd = cd
+			if _graph and _cur_cell() == goal_cell:
+				step_reward += GOAL_BONUS
+				goals_reached += 1
+				_new_goal()
 	for w in _front_wheels:
 		w.rotation.y = -steer_cmd * MAX_STEER_ANGLE
 	_draw_rays()
@@ -109,6 +134,15 @@ func get_obs() -> Array:
 		else:
 			obs.append(1.0)
 	obs.append(speed / MAX_SPEED)
+	if _graph:
+		for n in _next_cells():
+			var local := global_transform.basis.inverse() * (_graph.cell_center(n) - global_position)
+			var a := atan2(local.x, -local.z)   # 0 = justo delante, + = a la derecha
+			obs.append(sin(a))
+			obs.append(cos(a))
+		obs.append(clampf(_cont_distance() / 30.0, 0.0, 1.0))
+	else:
+		obs.append_array([0.0, 1.0, 0.0, 1.0, 0.0])
 	return obs
 
 
@@ -127,6 +161,9 @@ func reset() -> void:
 	throttle_cmd = 0.0
 	is_crashed = false
 	steps = 0
+	goals_reached = 0
+	if _graph:
+		_new_goal()
 
 
 func _draw_rays() -> void:
@@ -146,3 +183,75 @@ func _draw_rays() -> void:
 		_ray_mesh.surface_set_color(c)
 		_ray_mesh.surface_add_vertex(end)
 	_ray_mesh.surface_end()
+
+
+#region Meta y ruta
+func _cur_cell() -> Vector2i:
+	return _graph.world_to_cell(global_position)
+
+
+## Las 2 proximas celdas del camino mas corto desde la posicion actual hasta la meta.
+func _next_cells() -> Array:
+	var out: Array = []
+	var c := _cur_cell()
+	for k in 2:
+		var best := c
+		var best_d: int = _dist_map.get(c, 999)
+		for dir in RoadGraph.DIRS:
+			var n: Vector2i = c + dir
+			if _dist_map.has(n) and _dist_map[n] < best_d:
+				best = n
+				best_d = _dist_map[n]
+		out.append(best)
+		c = best
+	return out
+
+
+## Metros que quedan hasta la meta siguiendo la ruta (continuo, sin saltos al cambiar de celda).
+func _cont_distance() -> float:
+	var n1: Vector2i = _next_cells()[0]
+	return _dist_map.get(n1, 999) * RoadGraph.CELL + global_position.distance_to(_graph.cell_center(n1))
+
+
+## Elige una meta nueva a 4-12 celdas, cuya ruta empiece hacia delante (sin dar la vuelta).
+func _new_goal() -> void:
+	var cur := _cur_cell()
+	var res := _graph.bfs(cur)
+	var dist: Dictionary = res[0]
+	var first: Dictionary = res[1]
+	var fwd := -global_transform.basis.z
+	var ahead: Array[Vector2i] = []
+	var any: Array[Vector2i] = []
+	for c: Vector2i in dist:
+		var d: int = dist[c]
+		if d < GOAL_MIN_CELLS or d > GOAL_MAX_CELLS:
+			continue
+		any.append(c)
+		var step := _graph.cell_center(first[c]) - _graph.cell_center(cur)
+		if step.normalized().dot(fwd) > 0.5:
+			ahead.append(c)
+	var pool := ahead if not ahead.is_empty() else any
+	goal_cell = pool.pick_random()
+	_dist_map = _graph.bfs(goal_cell)[0]
+	_prev_cd = _cont_distance()
+	if _beacon:
+		_beacon.global_position = _graph.cell_center(goal_cell) + Vector3(0, 1.0, 0)
+
+
+func _make_beacon() -> void:
+	if not show_rays:
+		return   # en entrenamiento no hace falta dibujarla
+	_beacon = MeshInstance3D.new()
+	var m := CylinderMesh.new()
+	m.top_radius = 0.12
+	m.bottom_radius = 0.12
+	m.height = 2.0
+	_beacon.mesh = m
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = Color(0.2, 1.0, 0.3, 0.55)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_beacon.material_override = mat
+	_beacon.top_level = true
+	add_child(_beacon)
+#endregion

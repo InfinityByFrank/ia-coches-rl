@@ -61,6 +61,12 @@ func _build_world() -> void:
 			spawns.add_child(m)
 			m.owner = root
 	print("puntos de salida: ", n)
+	# Grafo de calles (para metas y rutas)
+	var graph := Node.new()
+	graph.name = "RoadGraph"
+	graph.set_script(load("res://scripts/road_graph.gd"))
+	root.add_child(graph)
+	graph.owner = root
 	_save(root, "res://scenes/world.tscn")
 
 
